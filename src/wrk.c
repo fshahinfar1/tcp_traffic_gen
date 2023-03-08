@@ -24,6 +24,7 @@ static struct config {
     char    *host;
     char    *script;
     SSL_CTX *ctx;
+    int     non_http;
 } cfg;
 
 static struct {
@@ -68,6 +69,9 @@ static void usage() {
            "    -R, --rate        <T>  work rate (throughput)     \n"
            "                           in requests/sec (total)    \n"
            "                           [Required Parameter]       \n"
+           "    -N, --non_http         does not parse the response\n"
+           "                           It is for benchmarking     \n"
+           "                           non-http apps.             \n"
            "                                                      \n"
            "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
@@ -88,6 +92,9 @@ int main(int argc, char **argv) {
     char *port    = copy_url_part(url, &parts, UF_PORT);
     char *service = port ? port : schema;
 
+    if (cfg.non_http)
+        goto ignore_http;
+
     if (!strncmp("https", schema, 5)) {
         if ((cfg.ctx = ssl_init()) == NULL) {
             fprintf(stderr, "unable to initialize SSL\n");
@@ -100,9 +107,10 @@ int main(int argc, char **argv) {
         sock.write    = ssl_write;
         sock.readable = ssl_readable;
     }
-	
+
+ignore_http:
     cfg.host = host;
-	
+
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT,  SIG_IGN);
 
@@ -119,7 +127,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "unable to connect to %s:%s %s\n", host, service, msg);
         exit(1);
     }
-    
+
     uint64_t connections = cfg.connections / cfg.threads;
     double throughput    = (double)cfg.rate / cfg.threads;
     uint64_t stop_at     = time_us() + (cfg.duration * 1000000);
@@ -579,7 +587,9 @@ static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
         case RETRY: return;
     }
 
-    http_parser_init(&c->parser, HTTP_RESPONSE);
+    if (!cfg.non_http) {
+        http_parser_init(&c->parser, HTTP_RESPONSE);
+    }
     c->written = 0;
 
     aeCreateFileEvent(c->thread->loop, fd, AE_READABLE, socket_readable, c);
@@ -661,7 +671,14 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
             case RETRY: return;
         }
 
-        if (http_parser_execute(&c->parser, &parser_settings, c->buf, n) != n) goto error;
+        if (cfg.non_http) {
+            /* The response does not need parsing. it is not HTTP! */
+            c->parser.status_code = 200; /* assume the response is a success */
+            parser_settings.on_message_complete(&c->parser);
+        } else if (http_parser_execute(&c->parser, &parser_settings, c->buf, n) != n) {
+            goto error;
+        }
+
         c->thread->bytes += n;
     } while (n == RECVBUF && sock.readable(c) > 0);
 
@@ -704,6 +721,7 @@ static struct option longopts[] = {
     { "help",           no_argument,       NULL, 'h' },
     { "version",        no_argument,       NULL, 'v' },
     { "rate",           required_argument, NULL, 'R' },
+    { "non-http",       no_argument,       NULL, 'N' },
     { NULL,             0,                 NULL,  0  }
 };
 
@@ -717,8 +735,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
     cfg->timeout     = SOCKET_TIMEOUT_MS;
     cfg->rate        = 0;
     cfg->record_all_responses = true;
+    cfg->non_http    = 0;
 
-    while ((c = getopt_long(argc, argv, "t:c:d:s:H:T:R:LUBrv?", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:c:d:s:H:T:R:LUBrvN?", longopts, NULL)) != -1) {
         switch (c) {
             case 't':
                 if (scan_metric(optarg, &cfg->threads)) return -1;
@@ -755,6 +774,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
             case 'v':
                 printf("wrk %s [%s] ", VERSION, aeGetApiName());
                 printf("Copyright (C) 2012 Will Glozer\n");
+                break;
+            case 'N':
+                cfg->non_http = 1;
                 break;
             case 'h':
             case '?':
