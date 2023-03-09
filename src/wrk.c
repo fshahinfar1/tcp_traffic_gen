@@ -587,8 +587,9 @@ static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
         case RETRY: return;
     }
 
-    if (!cfg.non_http) {
-        http_parser_init(&c->parser, HTTP_RESPONSE);
+    http_parser_init(&c->parser, HTTP_RESPONSE);
+    if (cfg.non_http) {
+        c->parser.state = 0;
     }
     c->written = 0;
 
@@ -672,9 +673,54 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
         }
 
         if (cfg.non_http) {
-            /* The response does not need parsing. it is not HTTP! */
-            c->parser.status_code = 200; /* assume the response is a success */
-            parser_settings.on_message_complete(&c->parser);
+            /* TODO: add support for arbitary protocols */
+            /* The non http method ends with "END\r\n" */
+            enum {
+                t0 = 0,
+                E,
+                N,
+                D,
+                t1,
+            };
+
+            for (int i = 0; i < n; i++) {
+                switch (c->parser.state) {
+                    case t0:
+                        if (c->buf[i] == 'E')
+                            c->parser.state = E;
+                        break;
+                    case E:
+                        if (c->buf[i] == 'N')
+                            c->parser.state = N;
+                        else
+                            c->parser.state = t0;
+                        break;
+                    case N:
+                        if (c->buf[i] == 'D')
+                            c->parser.state = D;
+                        else
+                            c->parser.state = t0;
+                        break;
+                        break;
+                    case D:
+                        if (c->buf[i] == '\r')
+                            c->parser.state = t1;
+                        else
+                            c->parser.state = t0;
+                        break;
+                    case t1:
+                        if (c->buf[i] == '\n') {
+                            /* End of request */
+                            c->parser.status_code = 200; /* assume the response is a success */
+                            parser_settings.on_message_complete(&c->parser);
+                            /* Get ready for the next message */
+                            c->parser.state = t0;
+                        } else {
+                            c->parser.state = t0;
+                        }
+                        break;
+                }
+            }
         } else if (http_parser_execute(&c->parser, &parser_settings, c->buf, n) != n) {
             goto error;
         }
