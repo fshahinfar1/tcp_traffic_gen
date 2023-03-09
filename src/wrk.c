@@ -569,7 +569,7 @@ static int response_complete(http_parser *parser) {
 
 
     /* TODO: assume the connection should stay open for non_http */
-    if (cfg.non_http || !http_should_keep_alive(parser)) {
+    if (!cfg.non_http && !http_should_keep_alive(parser)) {
         reconnect_socket(thread, c);
         goto done;
     }
