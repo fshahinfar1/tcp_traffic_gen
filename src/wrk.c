@@ -143,7 +143,9 @@ ignore_http:
         script_init(L, t, argc - optind, &argv[optind]);
 
         if (i == 0) {
-            cfg.pipeline = script_verify_request(t->L);
+            if (!cfg.non_http) {
+                cfg.pipeline = script_verify_request(t->L);
+            }
             cfg.dynamic = !script_is_static(t->L);
             if (script_want_response(t->L)) {
                 parser_settings.on_header_field = header_field;
