@@ -1,4 +1,5 @@
-CFLAGS  := -std=c99 -Wall -O2 -D_REENTRANT
+CC      := gcc
+CFLAGS  := -std=c99 -Wall -O2 -g -D_REENTRANT
 LIBS    := -lpthread -lm -lcrypto -lssl
 
 TARGET  := $(shell uname -s | tr '[A-Z]' '[a-z]' 2>/dev/null || echo unknown)
@@ -14,7 +15,8 @@ else ifeq ($(TARGET), darwin)
 	LIBS += -L/usr/local/opt/openssl/lib
 	CFLAGS += -I/usr/local/include -I/usr/local/opt/openssl/include
 else ifeq ($(TARGET), linux)
-        CFLAGS  += -D_POSIX_C_SOURCE=200809L -D_BSD_SOURCE
+        # CFLAGS  += -D_POSIX_C_SOURCE=200809L -D_BSD_SOURCE
+        CFLAGS  += -D_DEFAULT_SOURCE
 	LIBS    += -ldl
 	LDFLAGS += -Wl,-E
 else ifeq ($(TARGET), freebsd)
@@ -27,10 +29,10 @@ SRC  := wrk.c net.c ssl.c aprintf.c stats.c script.c units.c \
 BIN  := wrk
 
 ODIR := obj
-OBJ  := $(patsubst %.c,$(ODIR)/%.o,$(SRC)) $(ODIR)/bytecode.o
+OBJ  := $(patsubst %.c,$(ODIR)/%.o,$(SRC))
 
-LDIR     = deps/luajit/src
-LIBS    := -lluajit $(LIBS)
+LDIR     = deps/lua/src
+LIBS    := -llua $(LIBS)
 CFLAGS  += -I$(LDIR)
 LDFLAGS += -L$(LDIR)
 
@@ -38,28 +40,24 @@ all: $(BIN)
 
 clean:
 	$(RM) $(BIN) obj/*
-	@$(MAKE) -C deps/luajit clean
+	@$(MAKE) -C deps/lua clean
 
 $(BIN): $(OBJ)
 	@echo LINK $(BIN)
 	@$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-$(OBJ): config.h Makefile $(LDIR)/libluajit.a | $(ODIR)
+$(OBJ): config.h Makefile $(LDIR)/liblua.a | $(ODIR)
 
 $(ODIR):
 	@mkdir -p $@
-
-$(ODIR)/bytecode.o: src/wrk.lua
-	@echo LUAJIT $<
-	@$(SHELL) -c 'cd $(LDIR) && ./luajit -b $(CURDIR)/$< $(CURDIR)/$@'
 
 $(ODIR)/%.o : %.c
 	@echo CC $<
 	@$(CC) $(CFLAGS) -c -o $@ $<
 
-$(LDIR)/libluajit.a:
+$(LDIR)/liblua.a:
 	@echo Building LuaJIT...
-	@$(MAKE) -C $(LDIR) BUILDMODE=static
+	@$(MAKE) -C $(LDIR) BUILDMODE=static LUA_USE_APICHECK=1
 
 .PHONY: all clean
 .SUFFIXES:

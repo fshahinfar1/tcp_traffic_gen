@@ -73,7 +73,6 @@ static void usage() {
            "                           It is for benchmarking     \n"
            "                           non-http apps.             \n"
            "                                                      \n"
-           "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
            "  Time arguments may include a time unit (2s, 2m, 2h)\n");
 }
@@ -122,6 +121,11 @@ ignore_http:
 
 
     lua_State *L = script_create(cfg.script, url, headers);
+    if (L == NULL) {
+        /* Failed to create the script env */
+        return EXIT_FAILURE;
+    }
+
     if (!script_resolve(L, host, service)) {
         char *msg = strerror(errno);
         fprintf(stderr, "unable to connect to %s:%s %s\n", host, service, msg);

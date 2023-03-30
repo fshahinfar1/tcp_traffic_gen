@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include "script.h"
 #include "http_parser.h"
 #include "stats.h"
@@ -27,35 +28,46 @@ static void set_fields(lua_State *, int, const table_field *);
 static void set_field(lua_State *, int, char *, int);
 static int push_url_part(lua_State *, char *, struct http_parser_url *, enum http_parser_url_fields);
 
-static const struct luaL_reg addrlib[] = {
+static const struct luaL_Reg addrlib[] = {
     { "__tostring", script_addr_tostring   },
     { "__gc"    ,   script_addr_gc         },
     { NULL,         NULL                   }
 };
 
-static const struct luaL_reg statslib[] = {
+static const struct luaL_Reg statslib[] = {
     { "__index",    script_stats_get       },
     { "__len",      script_stats_len       },
     { NULL,         NULL                   }
 };
 
-static const struct luaL_reg threadlib[] = {
+static const struct luaL_Reg threadlib[] = {
     { "__index",    script_thread_index    },
     { "__newindex", script_thread_newindex },
     { NULL,         NULL                   }
 };
 
 lua_State *script_create(char *file, char *url, char **headers) {
+    int ret;
+
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
-    (void) luaL_dostring(L, "wrk = require \"wrk\"");
+    ret = luaL_dostring(L, "wrk = require \"wrk\"");
+    switch (ret) {
+        case LUA_OK:
+            break;
+        default:
+            fprintf(stderr, "Failed at 'require wrk' !!\n");
+            return NULL;
+    }
 
     luaL_newmetatable(L, "wrk.addr");
-    luaL_register(L, NULL, addrlib);
+    luaL_setfuncs(L, addrlib, 0);
+
     luaL_newmetatable(L, "wrk.stats");
-    luaL_register(L, NULL, statslib);
+    luaL_setfuncs(L, statslib, 0);
+
     luaL_newmetatable(L, "wrk.thread");
-    luaL_register(L, NULL, threadlib);
+    luaL_setfuncs(L, threadlib, 0);
 
     struct http_parser_url parts = {};
     script_parse_url(url, &parts);
@@ -108,7 +120,8 @@ bool script_resolve(lua_State *L, char *host, char *service) {
     lua_call(L, 2, 0);
 
     lua_getfield(L, -1, "addrs");
-    size_t count = lua_objlen(L, -1);
+    /* size_t count = lua_objlen(L, -1); */
+    size_t count = luaL_len(L, -1);
     lua_pop(L, 2);
     return count > 0;
 }
@@ -349,7 +362,7 @@ static int script_stats_percentile(lua_State *L) {
 static int script_stats_get(lua_State *L) {
     stats *s = checkstats(L);
     if (lua_isnumber(L, 2)) {
-        int index = luaL_checkint(L, 2);
+        lua_Integer index = luaL_checkinteger(L, 2);
         if (s->histogram) {
             double percentile = 100.0 * ((double) index) / s->histogram->total_count;
             int64_t value = hdr_value_at_percentile(s->histogram, percentile);
@@ -556,6 +569,7 @@ static void set_fields(lua_State *L, int index, const table_field *fields) {
                 break;
         }
         lua_setfield(L, index, f.name);
+        /* printf("dbg: setting value of %s at %d\n", f.name, index); */
     }
 }
 
