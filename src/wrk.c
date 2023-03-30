@@ -149,6 +149,8 @@ ignore_http:
         if (i == 0) {
             if (!cfg.non_http) {
                 cfg.pipeline = script_verify_request(t->L);
+            } else {
+                cfg.pipeline = 1;
             }
             cfg.dynamic = !script_is_static(t->L);
             if (script_want_response(t->L)) {

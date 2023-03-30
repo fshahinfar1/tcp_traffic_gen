@@ -587,7 +587,6 @@ static void set_fields(lua_State *L, int index, const table_field *fields) {
                 break;
         }
         lua_setfield(L, index, f.name);
-        /* printf("dbg: setting value of %s at %d\n", f.name, index); */
     }
 }
 
