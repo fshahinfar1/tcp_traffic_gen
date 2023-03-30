@@ -8,6 +8,8 @@
 #include "stats.h"
 #include "zmalloc.h"
 
+#include "../_wrk_lua_script.h"
+
 typedef struct {
     char *name;
     int   type;
@@ -47,18 +49,34 @@ static const struct luaL_Reg threadlib[] = {
 };
 
 lua_State *script_create(char *file, char *url, char **headers) {
-    int ret;
-
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
-    ret = luaL_dostring(L, "wrk = require \"wrk\"");
-    switch (ret) {
+
+
+    /*--------------------------------------
+     * Try to load the wrk.lua script
+     * ------------------------------------- */
+    /* This string is generated from wrk.lua in compile time */
+    switch (luaL_dostring(L,  (char *)wrk_lua)) {
         case LUA_OK:
             break;
         default:
-            fprintf(stderr, "Failed at 'require wrk' !!\n");
+            fprintf(stderr, "Failed to load wrk.lua\n");
             return NULL;
     }
+
+    /* switch (luaL_dostring(L, "wrk = require \"wrk\"")) { */
+    /*     case LUA_OK: */
+    /*         break; */
+    /*     default: */
+    /*         fprintf(stderr, "Failed at 'require wrk' !!\n"); */
+    /*         return NULL; */
+    /* } */
+
+    /* Assign it to a global variable */
+    lua_setglobal(L, "wrk");
+    /* ------------------------------------- */
+
 
     luaL_newmetatable(L, "wrk.addr");
     luaL_setfuncs(L, addrlib, 0);

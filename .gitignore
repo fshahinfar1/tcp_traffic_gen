@@ -2,6 +2,8 @@
 *.a
 wrk
 
+_wrk_lua_script.h
+
 deps/lua/src/lua
 deps/lua/src/luac
 deps/lua/src/liblua.a

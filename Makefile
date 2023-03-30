@@ -36,28 +36,35 @@ LIBS    := -llua $(LIBS)
 CFLAGS  += -I$(LDIR)
 LDFLAGS += -L$(LDIR)
 
+AUTO_GENERATED_HEADER := $(CURDIR)/_wrk_lua_script.h
+
 all: $(BIN)
 
 clean:
-	$(RM) $(BIN) obj/*
+	$(RM) $(BIN) obj/* $(AUTO_GENERATED_HEADER)
 	@$(MAKE) -C deps/lua clean
 
 $(BIN): $(OBJ)
 	@echo LINK $(BIN)
 	@$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-$(OBJ): config.h Makefile $(LDIR)/liblua.a | $(ODIR)
+$(OBJ): config.h Makefile $(LDIR)/liblua.a | $(AUTO_GENERATED_HEADER) $(ODIR)
 
 $(ODIR):
 	@mkdir -p $@
 
-$(ODIR)/%.o : %.c
+$(ODIR)/%.o : %.c $(AUTO_GENERATED_HEADER)
 	@echo CC $<
 	@$(CC) $(CFLAGS) -c -o $@ $<
 
 $(LDIR)/liblua.a:
 	@echo Building LuaJIT...
 	@$(MAKE) -C $(LDIR) BUILDMODE=static LUA_USE_APICHECK=1
+
+$(AUTO_GENERATED_HEADER): $(CURDIR)/src/wrk.lua
+	 # $(LDIR)/lua $(CURDIR)/bin2c.lua $(CURDIR)/src/wrk.lua > $(CURDIR)/src/_wrk_lua.h
+	 # sh -c "xxd -i $(CURDIR)/src/wrk.lua > $(CURDIR)/_wrk_lua_script.h"
+	 $(SHELL) -c 'cd $(CURDIR)/src && xxd -i wrk.lua > $@'
 
 .PHONY: all clean
 .SUFFIXES:
