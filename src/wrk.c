@@ -25,6 +25,7 @@ static struct config {
     char    *script;
     SSL_CTX *ctx;
     int     non_http;
+    int     reopen;
 } cfg;
 
 static struct {
@@ -72,6 +73,8 @@ static void usage() {
            "    -N, --non_http         does not parse the response\n"
            "                           It is for benchmarking     \n"
            "                           non-http apps.             \n"
+           "        --repoen           reopen the connection after\n"
+           "                           each request.              \n"
            "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
            "  Time arguments may include a time unit (2s, 2m, 2h)\n");
@@ -576,8 +579,13 @@ static int response_complete(http_parser *parser) {
     }
 
 
-    /* TODO: assume the connection should stay open for non_http */
-    if (!cfg.non_http && !http_should_keep_alive(parser)) {
+    if (cfg.non_http) {
+        /* TODO: assume the connection should stay open for non_http or it is
+         * always needs to be reopen*/
+        if (cfg.reopen) {
+            reconnect_socket(thread, c);
+        }
+    } if (!http_should_keep_alive(parser)) {
         reconnect_socket(thread, c);
         goto done;
     }
@@ -778,6 +786,7 @@ static struct option longopts[] = {
     { "version",        no_argument,       NULL, 'v' },
     { "rate",           required_argument, NULL, 'R' },
     { "non-http",       no_argument,       NULL, 'N' },
+    { "reopen",         no_argument,       NULL, 10  },
     { NULL,             0,                 NULL,  0  }
 };
 
@@ -833,6 +842,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 break;
             case 'N':
                 cfg->non_http = 1;
+                break;
+            case 10:
+                cfg->reopen = 1;
                 break;
             case 'h':
             case '?':
