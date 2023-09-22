@@ -9,6 +9,9 @@
 // Max recordable latency of 1 day
 #define MAX_LATENCY 24L * 60 * 60 * 1000000
 
+// #define DEBUG(...) printf(__VA_ARGS__)
+#define DEBUG(...) ;;
+
 static struct config {
     uint64_t threads;
     uint64_t connections;
@@ -501,6 +504,7 @@ static int delay_request(aeEventLoop *loop, long long id, void *data) {
 }
 
 static int response_complete(http_parser *parser) {
+    DEBUG("response received!\n");
     connection *c = parser->data;
     thread *thread = c->thread;
     uint64_t now = time_us();
@@ -664,6 +668,7 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
         case ERROR: goto error;
         case RETRY: return;
     }
+    DEBUG("write: %s\n", buf);
 
     c->written += n;
     if (c->written == c->length) {
@@ -674,6 +679,7 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
     return;
 
   error:
+    DEBUG("error happend!\n");
     thread->errors.write++;
     reconnect_socket(thread, c);
 }
@@ -700,6 +706,7 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
                 D,
                 t1,
             };
+            DEBUG("received: %s\n", c->buf);
 
             for (int i = 0; i < n; i++) {
                 switch (c->parser.state) {
@@ -721,10 +728,12 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
                         break;
                         break;
                     case D:
-                        if (c->buf[i] == '\r')
+                        if (c->buf[i] == '\r') {
                             c->parser.state = t1;
-                        else
+                        } else {
                             c->parser.state = t0;
+                            DEBUG("probably this is error in responding!\n");
+                        }
                         break;
                     case t1:
                         if (c->buf[i] == '\n') {
@@ -735,6 +744,7 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
                             c->parser.state = t0;
                         } else {
                             c->parser.state = t0;
+                            DEBUG("probably this is error in responding!\n");
                         }
                         break;
                 }
