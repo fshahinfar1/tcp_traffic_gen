@@ -589,7 +589,7 @@ static int response_complete(http_parser *parser) {
         if (cfg.reopen) {
             reconnect_socket(thread, c);
         }
-    } if (!http_should_keep_alive(parser)) {
+    } else if (!http_should_keep_alive(parser)) {
         reconnect_socket(thread, c);
         goto done;
     }
