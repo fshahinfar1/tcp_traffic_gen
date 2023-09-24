@@ -813,6 +813,8 @@ static struct option longopts[] = {
 };
 
 static int parse_args(struct config *cfg, char **url, struct http_parser_url *parts, char **headers, int argc, char **argv) {
+    int warmup_time_sec;
+    uint64_t warmup_time_us;
     char c, **header = headers;
 
     memset(cfg, 0, sizeof(struct config));
@@ -870,9 +872,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 break;
             case 11:
                 /* TODO: should I check for negative values ? */
-                int warmup_time_sec = atoi(optarg);
+                warmup_time_sec = atoi(optarg);
                 /* convert to us */
-                uint64_t warmup_time_us = warmup_time_sec * 1000000;
+                warmup_time_us = warmup_time_sec * 1000000;
                 cfg->record_since = warmup_time_us;
                 break;
             case 'h':
