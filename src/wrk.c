@@ -194,7 +194,7 @@ ignore_https:
     printf("  %"PRIu64" threads and %"PRIu64" connections\n",
             cfg.threads, cfg.connections);
 
-    uint64_t start    = time_us();
+    /* uint64_t start    = time_us(); */
     uint64_t complete = 0;
     uint64_t bytes    = 0;
     errors errors     = { 0 };
@@ -209,7 +209,8 @@ ignore_https:
         pthread_join(t->thread, NULL);
     }
 
-    uint64_t runtime_us = time_us() - start;
+    /* uint64_t runtime_us = time_us() - start; */
+    uint64_t runtime_us = time_us() - cfg.record_since;
 
     for (uint64_t i = 0; i < cfg.threads; i++) {
         thread *t = &threads[i];
@@ -519,9 +520,6 @@ static int response_complete(http_parser *parser) {
     uint64_t now = time_us();
     int status = parser->status_code;
 
-    thread->complete++;
-    thread->requests++;
-
     if (status > 399) {
         thread->errors.status++;
     }
@@ -585,6 +583,8 @@ static int response_complete(http_parser *parser) {
 
     // Check if warmup time has passed.
     if (time_us() > cfg.record_since) {
+        thread->complete++;
+        thread->requests++;
         // Record if needed, either last in batch or all, depending in cfg:
         if (cfg.record_all_responses || !c->has_pending) {
             hdr_record_value(thread->latency_histogram, expected_latency_timing);
@@ -764,7 +764,10 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
             goto error;
         }
 
-        c->thread->bytes += n;
+        /* do not keep statistic for the warmup period */
+        if (time_us() > cfg.record_since) {
+            c->thread->bytes += n;
+        }
     } while (n == RECVBUF && sock.readable(c) > 0);
 
     return;
