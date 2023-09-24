@@ -29,6 +29,7 @@ static struct config {
     SSL_CTX *ctx;
     int     non_http;
     int     reopen;
+    uint64_t record_since;
 } cfg;
 
 static struct {
@@ -76,8 +77,12 @@ static void usage() {
            "    -N, --non_http         does not parse the response\n"
            "                           It is for benchmarking     \n"
            "                           non-http apps.             \n"
-           "        --repoen           reopen the connection after\n"
+           "        --reopen           reopen the connection after\n"
            "                           each request.              \n"
+           "                                                      \n"
+           "        --warmup      <i>  do not record latency in   \n"
+           "                           the first <i> seconds of   \n"
+           "                           the experiment             \n"
            "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
            "  Time arguments may include a time unit (2s, 2m, 2h)\n");
@@ -98,7 +103,7 @@ int main(int argc, char **argv) {
     char *service = port ? port : schema;
 
     if (cfg.non_http)
-        goto ignore_http;
+        goto ignore_https;
 
     if (!strncmp("https", schema, 5)) {
         if ((cfg.ctx = ssl_init()) == NULL) {
@@ -113,7 +118,7 @@ int main(int argc, char **argv) {
         sock.readable = ssl_readable;
     }
 
-ignore_http:
+ignore_https:
     cfg.host = host;
 
     signal(SIGPIPE, SIG_IGN);
@@ -141,6 +146,10 @@ ignore_http:
     uint64_t connections = cfg.connections / cfg.threads;
     double throughput    = (double)cfg.rate / cfg.threads;
     uint64_t stop_at     = time_us() + (cfg.duration * 1000000);
+    /* Add the current timestamp to the amount of time we want to skip.
+     * Result would be the timestamp since when we can record data.
+     * */
+    cfg.record_since    += time_us();
 
     for (uint64_t i = 0; i < cfg.threads; i++) {
         thread *t = &threads[i];
@@ -574,14 +583,16 @@ static int response_complete(http_parser *parser) {
         aeCreateFileEvent(thread->loop, c->fd, AE_WRITABLE, socket_writeable, c);
     }
 
-    // Record if needed, either last in batch or all, depending in cfg:
-    if (cfg.record_all_responses || !c->has_pending) {
-        hdr_record_value(thread->latency_histogram, expected_latency_timing);
+    // Check if warmup time has passed.
+    if (time_us() > cfg.record_since) {
+        // Record if needed, either last in batch or all, depending in cfg:
+        if (cfg.record_all_responses || !c->has_pending) {
+            hdr_record_value(thread->latency_histogram, expected_latency_timing);
 
-        uint64_t actual_latency_timing = now - c->actual_latency_start;
-        hdr_record_value(thread->u_latency_histogram, actual_latency_timing);
+            uint64_t actual_latency_timing = now - c->actual_latency_start;
+            hdr_record_value(thread->u_latency_histogram, actual_latency_timing);
+        }
     }
-
 
     if (cfg.non_http) {
         /* TODO: assume the connection should stay open for non_http or it is
@@ -797,6 +808,7 @@ static struct option longopts[] = {
     { "rate",           required_argument, NULL, 'R' },
     { "non-http",       no_argument,       NULL, 'N' },
     { "reopen",         no_argument,       NULL, 10  },
+    { "warmup",         required_argument, NULL, 11  },
     { NULL,             0,                 NULL,  0  }
 };
 
@@ -855,6 +867,13 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 break;
             case 10:
                 cfg->reopen = 1;
+                break;
+            case 11:
+                /* TODO: should I check for negative values ? */
+                int warmup_time_sec = atoi(optarg);
+                /* convert to us */
+                uint64_t warmup_time_us = warmup_time_sec * 1000000;
+                cfg->record_since = warmup_time_us;
                 break;
             case 'h':
             case '?':
